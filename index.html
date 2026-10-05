@@ -1,13 +1,36 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Warehouse Live Scanner</title>
-<style>body{margin:0;background:#f4f5f7;font:16px Arial;color:#111}.header{background:#111;color:white;padding:20px}main{padding:16px;max-width:700px;margin:auto}.card{background:white;padding:16px;border-radius:14px;margin-bottom:12px}video{display:block;width:100%;max-height:55vh;min-height:240px;object-fit:cover;background:#111;border-radius:10px}button,a{padding:14px;display:inline-block;background:#087cf5;color:white;border:0;border-radius:10px;text-decoration:none;font-size:16px}#history{max-height:180px;overflow:auto}li{padding:5px}</style></head><body><div class="header"><h2>📷 Warehouse Live Scanner</h2>Automatic • Continuous • No pictures</div><main><div class="card"><p id="status">Starting rear camera...</p><video id="camera" autoplay playsinline muted></video><p>Point the camera at a barcode. No tapping needed.</p><button id="retry" hidden>Retry camera</button></div><div class="card"><strong>Last barcode: </strong><span id="last">None yet</span><p id="connection">Keep your Warehouse Inventory tab open. Results are sent to it automatically when the browser permits tab communication.</p><button id="copy" hidden>Copy last barcode</button><ul id="history"></ul></div></main>
+<style>body{margin:0;background:#f4f5f7;font:16px Arial;color:#111}.header{background:#111;color:white;padding:20px}main{padding:16px;max-width:700px;margin:auto}.card{background:white;padding:16px;border-radius:14px;margin-bottom:12px}video{display:block;width:100%;max-height:55vh;min-height:240px;object-fit:cover;background:#111;border-radius:10px}button,a{padding:14px;display:inline-block;background:#087cf5;color:white;border:0;border-radius:10px;text-decoration:none;font-size:16px}#history{max-height:180px;overflow:auto}li{padding:5px}</style></head><body><div class="header"><h2>📷 Warehouse Live Scanner</h2>Automatic • Continuous • No pictures</div><main><div class="card"><p id="status">Starting rear camera...</p><video id="camera" autoplay playsinline muted></video><p>Point the camera at a barcode. No tapping needed.</p><button id="retry" hidden>Retry camera</button></div><div class="card"><strong>Last barcode: </strong><span id="last">None yet</span><p id="connection">Keep your Warehouse Inventory tab open. Results are sent to it automatically when the browser permits tab communication.</p><button id="return" hidden>Return to unit details</button> <button id="copy" hidden>Copy last barcode</button><ul id="history"></ul></div></main>
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
 (function(){'use strict';
 var reader, active=false, last='', lastAt=0;
 var status=document.getElementById('status'), retry=document.getElementById('retry');
-function onCode(raw){var code=String(raw||'').trim().toUpperCase(), now=Date.now();if(!code||code.length>160||(code===last&&now-lastAt<5000))return;last=code;lastAt=now;document.getElementById('last').textContent=code;status.textContent='Camera active — scanned '+code;var li=document.createElement('li');li.textContent=new Date().toLocaleTimeString()+' — '+code;document.getElementById('history').prepend(li);var copy=document.getElementById('copy');copy.hidden=false;try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'WAREHOUSE_BARCODE',code:code},'*');document.getElementById('connection').textContent='Barcode sent to the Warehouse Inventory tab (if still connected).';}else{document.getElementById('connection').textContent='The warehouse tab connection is unavailable. Copy the barcode and use Find Pallet / Unit in the app.';}}catch(e){document.getElementById('connection').textContent='Cannot reach warehouse tab. Use Copy last barcode.';}}
+function onCode(raw){
+ var code=String(raw||'').trim().toUpperCase(),now=Date.now();
+ if(!code||code.length>160||(code===last&&now-lastAt<5000))return;
+ last=code;lastAt=now;
+ document.getElementById('last').textContent=code;
+ var li=document.createElement('li');li.textContent=new Date().toLocaleTimeString()+' — '+code;document.getElementById('history').prepend(li);
+ document.getElementById('copy').hidden=false;
+ var ret=document.getElementById('return');ret.hidden=false;
+ // Pause after the first valid read, so the inventory record is not replaced by stray scans.
+ active=false;try{if(reader)reader.reset()}catch(e){}
+ status.textContent='Scanned '+code+' — opening unit details...';
+ try{
+   if(window.opener&&!window.opener.closed){
+     window.opener.postMessage({type:'WAREHOUSE_BARCODE',code:code},'*');
+     document.getElementById('connection').textContent='Unit sent to Warehouse Inventory. Returning to its details...';
+     try{window.opener.focus()}catch(e){}
+     // Safari may refuse to close or switch tabs. Return button remains as fallback.
+     setTimeout(function(){try{window.close()}catch(e){}},350);
+   }else{
+     document.getElementById('connection').textContent='Warehouse tab connection unavailable. Reopen Scan Barcode from the warehouse app, or copy this ID to Find Pallet / Unit.';
+   }
+ }catch(e){document.getElementById('connection').textContent='Could not return automatically. Use Copy last barcode.';}
+}
+
 async function start(){retry.hidden=true;status.textContent='Starting rear camera...';try{if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw Error('Camera requires HTTPS and Safari camera access.');if(!window.ZXing||!ZXing.BrowserMultiFormatReader)throw Error('Scanner library did not load. Check internet connection.');if(reader)reader.reset();reader=new ZXing.BrowserMultiFormatReader();active=true;await reader.decodeFromConstraints({audio:false,video:{facingMode:{ideal:'environment'}}},'camera',function(result){if(active&&result)onCode(result.getText?result.getText():result.text)});status.textContent='Camera active — point at a barcode';}catch(e){active=false;status.textContent='Camera unavailable: '+(e.message||e);retry.hidden=false;}}
-retry.addEventListener('click',start);document.getElementById('copy').addEventListener('click',function(){if(navigator.clipboard&&last)navigator.clipboard.writeText(last)});document.addEventListener('visibilitychange',function(){if(document.hidden){active=false;if(reader)reader.reset();}else start()});start();
+document.getElementById('return').addEventListener('click',function(){try{if(window.opener&&!window.opener.closed){window.opener.focus();window.close();}}catch(e){}});retry.addEventListener('click',start);document.getElementById('copy').addEventListener('click',function(){if(navigator.clipboard&&last)navigator.clipboard.writeText(last)});document.addEventListener('visibilitychange',function(){if(document.hidden){active=false;if(reader)reader.reset();}else if(!last)start()});start();
 })();
 </script></body></html>
